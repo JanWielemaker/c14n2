@@ -52,6 +52,7 @@ xml_canonical_dom(element( Name,  Attrs,  Content),
 	put_ns_attrs(AttrsWithNS1, AttrsWithNS, InNS, OutNS1, OutNS),
 	ns_attrs(OutNS0, OutNS, NSAttrs),
 	append([KillDefault, NSAttrs, AttrsSans, AttrsWithNS], CAttrs),
+	must_be(list, Content),
 	xml_canonical_list(Content, CContent,
 			   Options.put(_{in_ns:InNS, out_ns:OutNS})).
 xml_canonical_dom(CDATA, CDATA, _) :-

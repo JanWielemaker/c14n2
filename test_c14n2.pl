@@ -3,6 +3,7 @@
 
 test :-
 	test_file(In, Out),
+	format('?- ~q.~n', [test(In, Out)]),
 	test(In, Out).
 
 test_file(Dir, In, Out) :-
@@ -21,7 +22,8 @@ test_file(In, Out) :-
 
 test(In, Out) :-
 	load_xml(In, DOM,
-		 [ dialect(xmlns)
+		 [ dialect(xmlns),
+		   system_entities(true)
 		 ]),
 	with_output_to(string(Cann),
 		       xml_write_canonical(current_output, DOM)),
