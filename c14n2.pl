@@ -24,7 +24,7 @@ process takes two steps:
 
 xml_write_canonical(Stream, DOM) :-
 	xml_canonical_dom(DOM, CannDOM),
-	xml_write(Stream, CannDOM,
+        xml_write(Stream, CannDOM,
 		  [ header(false),
 		    layout(false),
 		    net(false)
@@ -58,7 +58,7 @@ xml_canonical_dom(element( Name,  Attrs,  Content),
 xml_canonical_dom(CDATA, CDATA, _) :-
 	atomic(CDATA).
 
-has_ns(_URL:_Name=_Value).
+has_ns(ns(_,_URL):_Name=_Value).
 
 xml_canonical_list([], [], _).
 xml_canonical_list([H0|T0], [H|T], Options) :-
@@ -86,6 +86,12 @@ put_elemns(Name, Name, _InNS, OutNS0, OutNS1, [xmlns='']) :-
 put_elemns(Name, CName, InNS, OutNS0, OutNS, []) :-
 	put_ns(Name, CName, InNS, OutNS0, OutNS).
 
+put_ns(ns(NS, URL):Name, CName, _InNS, OutNS, OutNS) :-
+	get_dict(URL, OutNS, NS), !,
+	make_cname(NS:Name, CName).
+put_ns(ns(NS, URL):Name, CName, _InNS, OutNS0, OutNS) :- !,
+	make_cname(NS:Name, CName),
+	OutNS = OutNS0.put(URL, NS).
 put_ns(URL:Name, CName, _InNS, OutNS, OutNS) :-
 	get_dict(URL, OutNS, NS), !,
 	make_cname(NS:Name, CName).
