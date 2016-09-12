@@ -1,5 +1,5 @@
 :- module(c14n2,
-	  [ xml_write_canonical/2	% +Stream, +Term
+          [ xml_write_canonical/3	% +Stream, +Term, +Options
 	  ]).
 :- use_module(library(error)).
 :- use_module(library(sgml_write)).
@@ -17,21 +17,18 @@ process takes two steps:
   - Call xml_write/3 with appropriate flags
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-%%	xml_write_canonical(+Stream, +Term) is det.
+%%	xml_write_canonical(+Stream, +Term, +Options) is det.
 %
 %	Write an XML DOM using the   canonical conventions as defined by
 %	C14n2.
 
-xml_write_canonical(Stream, DOM) :-
-	xml_canonical_dom(DOM, CannDOM),
-        xml_write(Stream, CannDOM,
+xml_write_canonical(Stream, DOM, _Options) :-
+        xml_canonical_dom(DOM, CDOM, xml{in_ns:ns{}, out_ns:ns{}, is_root:true}),
+        xml_write(Stream, CDOM,
 		  [ header(false),
 		    layout(false),
 		    net(false)
 		  ]).
-
-xml_canonical_dom(DOM, CDOM) :-
-	xml_canonical_dom(DOM, CDOM, xml{in_ns:ns{}, out_ns:ns{}}).
 
 xml_canonical_dom(Var, _, _) :-
 	var(Var), !,
@@ -43,22 +40,33 @@ xml_canonical_dom(element( Name,  Attrs,  Content),
 		  element(CName, CAttrs, CContent),
 		  Options) :- !,
 	InNS0  = Options.in_ns,
-	OutNS0 = Options.out_ns,
-	take_ns(Attrs, Attrs1, InNS0, InNS),
-	partition(has_ns, Attrs1, AttrsWithNS0, AttrsSans0),
-	sort(1, @<, AttrsWithNS0, AttrsWithNS1),
-	sort(1, @<, AttrsSans0, AttrsSans),
-	put_elemns(Name, CName, InNS, OutNS0, OutNS1, KillDefault),
-	put_ns_attrs(AttrsWithNS1, AttrsWithNS, InNS, OutNS1, OutNS),
-	ns_attrs(OutNS0, OutNS, NSAttrs),
-	append([KillDefault, NSAttrs, AttrsSans, AttrsWithNS], CAttrs),
+        OutNS0 = Options.out_ns,
+        take_ns(Attrs, Attrs1, InNS0, InNS),
+        partition(has_ns, Attrs1, AttrsWithNS0, AttrsSans0),
+        sort(1, @<, AttrsWithNS0, AttrsWithNS1),
+        sort(1, @<, AttrsSans0, AttrsSans),
+        put_elemns(Name, CName, InNS, OutNS0, OutNS1, KillDefault),
+        put_ns_attrs(AttrsWithNS1, AttrsWithNS, InNS, OutNS1, OutNS),
+        ns_attrs(OutNS0, OutNS, NSAttrs),
+        ( Options.is_root == true ->
+          ( select(xmlns=DefaultNamespace, NSAttrs, NSAttrs0)
+             % If there is a default namespace, it must come first, and I dont think sort/4 can sort on two keys at once
+          -> findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs0),
+             sort(2, @=<, RootNSAttrs, RootNSAttrs0),
+             RootNSAttrs1 = [xmlns=DefaultNamespace|RootNSAttrs0]
+          ;  findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs),
+             sort(2, @=<, RootNSAttrs, RootNSAttrs1)
+          ),
+          append([KillDefault, RootNSAttrs1, AttrsSans, AttrsWithNS], CAttrs)
+        ; append([KillDefault, NSAttrs, AttrsSans, AttrsWithNS], CAttrs)
+        ),
 	must_be(list, Content),
 	xml_canonical_list(Content, CContent,
-			   Options.put(_{in_ns:InNS, out_ns:OutNS})).
+                           Options.put(_{in_ns:InNS, out_ns:OutNS, is_root:false})).
 xml_canonical_dom(CDATA, CDATA, _) :-
 	atomic(CDATA).
 
-has_ns(ns(_,_URL):_Name=_Value).
+has_ns(_NS:_Name=_Value).
 
 xml_canonical_list([], [], _).
 xml_canonical_list([H0|T0], [H|T], Options) :-
@@ -90,7 +98,7 @@ put_ns(ns(NS, URL):Name, CName, _InNS, OutNS, OutNS) :-
 	get_dict(URL, OutNS, NS), !,
 	make_cname(NS:Name, CName).
 put_ns(ns(NS, URL):Name, CName, _InNS, OutNS0, OutNS) :- !,
-	make_cname(NS:Name, CName),
+        make_cname(NS:Name, CName),
 	OutNS = OutNS0.put(URL, NS).
 put_ns(URL:Name, CName, _InNS, OutNS, OutNS) :-
 	get_dict(URL, OutNS, NS), !,
