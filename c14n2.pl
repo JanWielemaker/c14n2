@@ -22,8 +22,9 @@ process takes two steps:
 %	Write an XML DOM using the   canonical conventions as defined by
 %	C14n2.
 
-xml_write_canonical(Stream, DOM, _Options) :-
-        xml_canonical_dom(DOM, CDOM, xml{in_ns:ns{}, out_ns:ns{}, is_root:true}),
+xml_write_canonical(Stream, DOM, Options) :-
+        option(method(Method), Options, 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'),
+        xml_canonical_dom(DOM, CDOM, xml{in_ns:ns{}, out_ns:ns{}, is_root:true, method:Method}),
         xml_write(Stream, CDOM,
 		  [ header(false),
 		    layout(false),
@@ -41,24 +42,27 @@ xml_canonical_dom(element( Name,  Attrs,  Content),
 		  Options) :- !,
 	InNS0  = Options.in_ns,
         OutNS0 = Options.out_ns,
-        take_ns(Attrs, Attrs1, InNS0, InNS),
+        Method = Options.method,
+        take_ns(Attrs, Method, Name, Attrs1, InNS0, InNS),
         partition(has_ns, Attrs1, AttrsWithNS0, AttrsSans0),
         sort(1, @<, AttrsWithNS0, AttrsWithNS1),
         sort(1, @<, AttrsSans0, AttrsSans),
         put_elemns(Name, CName, InNS, OutNS0, OutNS1, KillDefault),
         put_ns_attrs(AttrsWithNS1, AttrsWithNS, InNS, OutNS1, OutNS),
         ns_attrs(OutNS0, OutNS, NSAttrs),
-        ( Options.is_root == true ->
-          ( select(xmlns=DefaultNamespace, NSAttrs, NSAttrs0)
-             % If there is a default namespace, it must come first, and I dont think sort/4 can sort on two keys at once
-          -> findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs0),
-             sort(2, @=<, RootNSAttrs, RootNSAttrs0),
-             RootNSAttrs1 = [xmlns=DefaultNamespace|RootNSAttrs0]
-          ;  findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs),
-             sort(2, @=<, RootNSAttrs, RootNSAttrs1)
-          ),
-          append([KillDefault, RootNSAttrs1, AttrsSans, AttrsWithNS], CAttrs)
-        ; append([KillDefault, NSAttrs, AttrsSans, AttrsWithNS], CAttrs)
+        (  Options.is_root == true ->
+           (  select(xmlns=DefaultNamespace, NSAttrs, NSAttrs0)
+              % If there is a default namespace, it must come first, and I dont think sort/4 can sort on two keys at once
+           -> findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs0),
+              sort(2, @=<, RootNSAttrs, RootNSAttrs0),
+              RootNSAttrs1 = [xmlns=DefaultNamespace|RootNSAttrs0]
+           ;  Method == 'http://www.w3.org/2001/10/xml-exc-c14n#'
+           -> RootNSAttrs1 = NSAttrs
+           ;  findall(xmlns:NS=URI, member(xmlns:NS=URI, Attrs), RootNSAttrs, NSAttrs),
+              sort(2, @<, RootNSAttrs, RootNSAttrs1)
+           ),
+           append([KillDefault, RootNSAttrs1, AttrsSans, AttrsWithNS], CAttrs)
+        ;  append([KillDefault, NSAttrs, AttrsSans, AttrsWithNS], CAttrs)
         ),
 	must_be(list, Content),
 	xml_canonical_list(Content, CContent,
@@ -73,12 +77,18 @@ xml_canonical_list([H0|T0], [H|T], Options) :-
 	xml_canonical_dom(H0, H, Options),
 	xml_canonical_list(T0, T, Options).
 
-take_ns([], [], Options, Options).
-take_ns([H|T0], T, Options0, Options) :-
-	xml_ns(H, NS, URL), !,
-	take_ns(T0, T, Options0.put(NS, URL), Options).
-take_ns([H|T0], [H|T], Options0, Options) :-
-	take_ns(T0, T, Options0, Options).
+take_ns([], _, _, [], NSList, NSList).
+take_ns([H|T0], Method, Name, T, NSList0, NSList) :-
+        xml_ns(H, NS, URL), !,
+        (  include_ns(Name, Method, NS, URL)
+        -> take_ns(T0, Method, Name, T, NSList0.put(NS, URL), NSList)
+        ;  take_ns(T0, Method, Name, T, NSList0, NSList)
+        ).
+take_ns([H|T0], Method, Name, [H|T], NSList0, NSList) :-
+        take_ns(T0, Method, Name, T, NSList0, NSList).
+
+include_ns(ns(Prefix, URI):_, 'http://www.w3.org/2001/10/xml-exc-c14n#', Prefix, URI):- !.
+include_ns(_, 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315', _, _):- !.
 
 
 put_ns_attrs([], [], _, OutNS, OutNS).
